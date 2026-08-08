@@ -13,6 +13,12 @@ as a small, dependable CLI: a hard iteration cap, an optional verify gate, and a
 loopgen "get the test suite green" --verify "cargo test" --max 6
 ```
 
+## Demo
+
+![loopgen rendering an agentic loop harness with --dry-run](demo.gif)
+
+*Recorded from the actual binary with [asciinema](https://asciinema.org) + [agg](https://github.com/asciinema/agg).*
+
 ## Install
 
 ```sh
