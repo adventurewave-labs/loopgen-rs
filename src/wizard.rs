@@ -5,7 +5,7 @@ use crate::ui;
 use std::io;
 
 pub fn run() -> io::Result<FileConfig> {
-    ui::banner("loopgen · wizard");
+    ui::banner("loopgen \u{00b7} wizard");
     println!();
     ui::info(
         "This wizard creates a loopgen configuration.
@@ -14,7 +14,7 @@ pub fn run() -> io::Result<FileConfig> {
     );
     println!();
 
-    let goal = ui::ask_text("Goal — what should Claude achieve?", None)?;
+    let goal = ui::ask_text("Goal \u{2014} what should Claude achieve?", None)?;
     println!();
 
     let max = ui::ask_u64("Max iterations (safety cap)", 8)? as u32;
@@ -26,13 +26,13 @@ pub fn run() -> io::Result<FileConfig> {
     println!();
 
     let dod = if verify.is_some() {
-        None // auto-derived when verify is set
+        None
     } else {
         ui::ask_optional("Definition of Done (auto-derived if blank)")?
     };
     println!();
 
-    let model = ui::ask_optional("Model (default = Claude Code\u{2019}s configured model)")?;
+    let model = ui::ask_optional("Model (default = Claude Code's configured model)")?;
     println!();
 
     let verbose = ui::ask_bool("Verbose output (echo each invocation)?", false)?;
@@ -56,10 +56,28 @@ pub fn run() -> io::Result<FileConfig> {
 pub fn post_create(cfg: &FileConfig) -> io::Result<bool> {
     // Show summary
     println!("{}", ui::bold("Configuration summary:"));
-    println!("  goal:          {}", ui::dim(if cfg.goal.len() > 60 { format!("{}\u{2026}", &cfg.goal[..60]) } else { cfg.goal.clone() }));
+    let goal_display = if cfg.goal.len() > 60 {
+        let truncated = &cfg.goal[..60];
+        format!("{}...", truncated)
+    } else {
+        cfg.goal.clone()
+    };
+    println!("  goal:          {}", ui::dim(&goal_display));
     println!("  max:           {}", cfg.max);
-    println!("  verify:        {}", ui::dim(match &cfg.verify { Some(v) => v.as_str(), None => "(none)" }));
-    println!("  model:         {}", ui::dim(match &cfg.model { Some(m) => m.as_str(), None => "default" }));
+    println!(
+        "  verify:        {}",
+        ui::dim(match &cfg.verify {
+            Some(v) => v.as_str(),
+            None => "(none)",
+        })
+    );
+    println!(
+        "  model:         {}",
+        ui::dim(match &cfg.model {
+            Some(m) => m.as_str(),
+            None => "default",
+        })
+    );
     println!("  verbose:       {}", if cfg.verbose { "yes" } else { "no" });
     println!();
 
@@ -80,7 +98,6 @@ pub fn post_create(cfg: &FileConfig) -> io::Result<bool> {
         match std::fs::write(&path, &script) {
             Ok(()) => {
                 ui::success(&format!("exported to {}", path));
-                // Make executable
                 #[cfg(unix)]
                 {
                     use std::os::unix::fs::PermissionsExt;
@@ -101,9 +118,6 @@ pub fn post_create(cfg: &FileConfig) -> io::Result<bool> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    // The wizard requires interactive input, so we only test non-interactive parts.
-    // Full wizard integration is tested manually.
 
     #[test]
     fn default_config_is_valid() {
