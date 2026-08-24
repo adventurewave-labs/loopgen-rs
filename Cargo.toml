@@ -1,11 +1,11 @@
 [package]
 name = "loopgen"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
-description = "Agentic loop runner for Claude Code — drives `claude -p` in an iterative loop with a LOOP_STATUS termination contract."
+description = "Agentic loop runner for Claude Code — drives `claude -p` in an iterative loop with a LOOP_STATUS termination contract. Supports interactive wizard, TOML configs, and bash export."
 license = "MIT"
 repository = "https://github.com/adventurewave-labs/loopgen-rs"
-keywords = ["claude", "cli", "agentic", "automation", "llm"]
+keywords = ["claude", "claude-code", "agent", "automation", "cli", "loop"]
 categories = ["command-line-utilities", "development-tools"]
 readme = "README.md"
 
@@ -19,6 +19,7 @@ anyhow = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 regex = "1"
+toml = "0.8"
 
 [profile.release]
 strip = true
