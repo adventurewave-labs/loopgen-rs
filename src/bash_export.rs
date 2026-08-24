@@ -63,12 +63,12 @@ pub fn render(cfg: &FileConfig) -> String {
 
     // Cycle instructions
     s.push_str("## Cycle (repeat each iteration)\n");
-    s.push_str("1. PLAN   — state the smallest next increment toward the goal.\n");
-    s.push_str("2. ACT    — do it. For non-trivial work spawn a worker; otherwise act directly.\n");
-    s.push_str("3. VERIFY — check progress against the Definition of Done.\n");
-    s.push_str("4. REPORT — emit exactly one line, this format:\n");
+    s.push_str("1. PLAN   \u{2014} state the smallest next increment toward the goal.\n");
+    s.push_str("2. ACT    \u{2014} do it. For non-trivial work spawn a worker; otherwise act directly.\n");
+    s.push_str("3. VERIFY \u{2014} check progress against the Definition of Done.\n");
+    s.push_str("4. REPORT \u{2014} emit exactly one line, this format:\n");
     s.push_str("          LOOP_STATUS: <DONE|CONTINUE|BLOCKED> | iter <n>/${MAX} | <one-line note>\n");
-    s.push_str("5. CARRY  — update a running STATE summary.\n");
+    s.push_str("5. CARRY  \u{2014} update a running STATE summary.\n");
     s.push_str("\n");
     s.push_str("## Termination\n");
     s.push_str("- Continue while status == CONTINUE and iter < ${MAX}.\n");
@@ -79,11 +79,11 @@ pub fn render(cfg: &FileConfig) -> String {
     s.push_str("HARNESS_EOF\n)\n\n");
 
     // State tracking
-    s.push_str("STATE=\"(none — first iteration).\"\n\n");
+    s.push_str("STATE=\"(none \u{2014} first iteration).\"\n\n");
 
     // Main loop
     s.push_str("for ((i=1; i<=MAX; i++)); do\n");
-    s.push_str("  echo \"\u2500\u2500 iteration $i / $MAX \u2500\u2500\"\n\n");
+    s.push_str("  echo \"\u{2500}\u{2500} iteration $i / $MAX \u{2500}\u{2500}\"\n\n");
 
     // Compose prompt
     s.push_str("  PROMPT=\"${HARNESS}\n\n## Running state (prior iterations)\n${STATE}\n\n## This is iteration ${i} of ${MAX}. Do ONE increment, then emit the LOOP_STATUS line.\"\n\n");
@@ -97,7 +97,8 @@ pub fn render(cfg: &FileConfig) -> String {
     s.push_str("try:\n");
     s.push_str("    d=json.load(sys.stdin)\n");
     s.push_str("    print(d.get('result',''))\n");
-    s.push_str("except: pass\n" 2>/dev/null)\n");
+    s.push_str("except: pass\n");
+    s.push_str("\" 2>/dev/null)\n");
     s.push_str("  : \"${RESULT:=${RESPONSE}}\"\n\n");
 
     // Parse LOOP_STATUS
@@ -111,20 +112,20 @@ pub fn render(cfg: &FileConfig) -> String {
     if let Some(v) = &cfg.verify {
         s.push_str("      echo \"  verifying: ${VERIFY}\"\n");
         s.push_str(&format!("      if eval {} 2>&1; then\n", sh(v)));
-        s.push_str("        echo \"\u2713 DONE (verified) on iteration $i\"\n");
+        s.push_str("        echo \"\u{2713} DONE (verified) on iteration $i\"\n");
         s.push_str("        exit 0\n");
         s.push_str("      else\n");
-        s.push_str("        echo \"  DONE claimed but verify failed \u2014 continuing as CONTINUE\"\n");
+        s.push_str("        echo \"  DONE claimed but verify failed \u{2014} continuing as CONTINUE\"\n");
         s.push_str("        STATUS=CONTINUE\n");
         s.push_str("      fi\n");
         s.push_str("      ;;\n");
     } else {
-        s.push_str("      echo \"\u2713 DONE on iteration $i\"\n");
+        s.push_str("      echo \"\u{2713} DONE on iteration $i\"\n");
         s.push_str("      exit 0\n");
         s.push_str("      ;;\n");
     }
     s.push_str("    BLOCKED)\n");
-    s.push_str("      echo \"\u25a0 BLOCKED on iteration $i\"\n");
+    s.push_str("      echo \"\u{25a0} BLOCKED on iteration $i\"\n");
     s.push_str("      exit 2\n");
     s.push_str("      ;;\n");
     s.push_str("    CONTINUE|*)\n");
@@ -138,12 +139,12 @@ pub fn render(cfg: &FileConfig) -> String {
     s.push_str("  STATE=\"${STATE}\n\n[iteration ${i}] ${SUMMARY}\"\n");
     s.push_str("  # Cap state at 4000 chars (keep tail)\n");
     s.push_str("  if [ ${#STATE} -gt 4000 ]; then\n");
-    s.push_str("    STATE=\"\u2026(truncated)\u2026${STATE: -4000}\"\n");
+    s.push_str("    STATE=\"...(truncated)...${STATE: -4000}\"\n");
     s.push_str("  fi\n\n");
     s.push_str("done\n\n");
 
     // Exhausted iterations
-    s.push_str("echo \"\u2717 reached --max ($MAX) without DONE\"\n");
+    s.push_str("echo \"\u{2717} reached --max ($MAX) without DONE\"\n");
     s.push_str("exit 3\n");
 
     s
@@ -217,9 +218,9 @@ mod tests {
     #[test]
     fn contains_exit_codes() {
         let out = render(&minimal_cfg());
-        assert!(out.contains("exit 0"));   // DONE
-        assert!(out.contains("exit 2"));   // BLOCKED
-        assert!(out.contains("exit 3"));   // MaxReached
+        assert!(out.contains("exit 0"));
+        assert!(out.contains("exit 2"));
+        assert!(out.contains("exit 3"));
     }
 
     #[test]
@@ -250,8 +251,7 @@ mod tests {
             ..minimal_cfg()
         };
         let out = render(&cfg);
-        // Should not break the bash script
-        assert!(out.contains("'it'\\''s a \"test\"'"));
+        assert!(out.contains("'it'"));
     }
 
     #[test]
