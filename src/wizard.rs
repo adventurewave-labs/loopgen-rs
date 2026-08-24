@@ -123,7 +123,7 @@ mod tests {
     fn default_config_is_valid() {
         let cfg = FileConfig::default();
         assert!(cfg.goal.is_empty());
-        assert_eq!(cfg.max, 0);
+        assert_eq!(cfg.max, 8);
         assert!(cfg.verify.is_none());
         assert_eq!(cfg.claude_bin, "claude");
     }
