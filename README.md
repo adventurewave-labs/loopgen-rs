@@ -29,10 +29,43 @@ This builds the optimized binary and installs `loopgen` into your Cargo bin
 directory (`~/.cargo/bin` by default). You need the [`claude`](https://docs.claude.com/en/docs/claude-code)
 CLI available on your `PATH` (or pass `--claude-bin <PATH>`) for real runs.
 
+Or install from [crates.io](https://crates.io/crates/loopgen):
+
+```sh
+cargo install loopgen
+```
+
+### TOML configuration
+
+Save a loop definition as a file for reuse:
+
+```toml
+# loop.toml
+goal = "get the test suite green"
+max = 12
+verify = "cargo test"
+```
+
+Then run with `loopgen --config loop.toml`. CLI flags override file values when both are set.
+
+### Bash export
+
+Export any loop as a standalone, portable bash script:
+
+```sh
+loopgen "fix the parser" --verify "cargo test" --export-bash > fix-loop.sh
+chmod +x fix-loop.sh
+./fix-loop.sh
+```
+
+The exported script uses only `claude`, `grep`, and `python3` — no Rust required at runtime.
+
 ## Usage
 
 ```text
 loopgen [OPTIONS] <GOAL>
+loopgen --wizard
+loopgen --config loop.toml
 ```
 
 | Flag | Type | Default | Meaning |
@@ -46,6 +79,10 @@ loopgen [OPTIONS] <GOAL>
 | `--max-state-chars <N>` | `usize` | `4000` | Cap on running state carried between iterations |
 | `--claude-bin <PATH>` | string | `claude` | Override the claude binary path |
 | `-v, --verbose` | flag | false | Echo each invocation and raw status lines |
+| `--wizard` | flag | false | Interactive configuration wizard |
+| `--config <FILE>` | string | none | Load configuration from a TOML file |
+| `--save <FILE>` | string | none | Save effective config to TOML and exit |
+| `--export-bash` | flag | false | Export as a standalone bash script and exit |
 
 ## Examples
 
