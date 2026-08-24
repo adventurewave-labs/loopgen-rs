@@ -5,7 +5,6 @@
 
 use serde::{Deserialize, Serialize};
 use std::io;
-use std::path::Path;
 
 /// Serializable loop configuration.
 ///
