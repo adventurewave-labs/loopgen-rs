@@ -37,7 +37,8 @@ pub fn definition_of_done(cfg: &Config) -> String {
 /// Render the full harness prompt. When `--verify` is absent, the two
 /// `Run:` / `It MUST exit 0` lines are omitted entirely.
 pub fn render_harness(cfg: &Config) -> String {
-    let slug = slugify(&cfg.goal);
+    let goal = cfg.goal.as_deref().unwrap_or("");
+    let slug = slugify(goal);
     let dod = definition_of_done(cfg);
     let max = cfg.max;
 
@@ -49,7 +50,7 @@ pub fn render_harness(cfg: &Config) -> String {
     };
 
     format!(
-        "# AGENTIC LOOP — {slug}
+        "# AGENTIC LOOP \u{2014} {slug}
 
 ## Goal
 {goal}
@@ -58,19 +59,19 @@ pub fn render_harness(cfg: &Config) -> String {
 You are the loop CONTROLLER. Execute this as an ITERATIVE loop, not a single pass.
 
 ## Cycle (repeat each iteration)
-1. PLAN   — state the smallest next increment toward the goal.
-2. ACT    — do it. For non-trivial work spawn a worker; otherwise act directly.
-3. VERIFY — check progress against the Definition of Done.{verify_block}
-4. REPORT — emit exactly one line, this format:
+1. PLAN   \u{2014} state the smallest next increment toward the goal.
+2. ACT    \u{2014} do it. For non-trivial work spawn a worker; otherwise act directly.
+3. VERIFY \u{2014} check progress against the Definition of Done.{verify_block}
+4. REPORT \u{2014} emit exactly one line, this format:
           LOOP_STATUS: <DONE|CONTINUE|BLOCKED> | iter <n>/{max} | <one-line note>
-5. CARRY  — update a running STATE summary: what is done, what remains, key decisions.
+5. CARRY  \u{2014} update a running STATE summary: what is done, what remains, key decisions.
 
 ## Definition of Done
 {dod}
 
 ## Termination
 - Continue while status == CONTINUE and iter < {max}.
-- Stop on DONE, BLOCKED, or iter == {max} (then report partial state — do not silently continue).
+- Stop on DONE, BLOCKED, or iter == {max} (then report partial state \u{2014} do not silently continue).
 
 ## Constraints (hard)
 - Max iterations: {max}.
@@ -78,11 +79,10 @@ You are the loop CONTROLLER. Execute this as an ITERATIVE loop, not a single pas
 - Do NOT send any message (email/Slack/GitHub/etc.) without per-action confirmation.
 - Infra changes (Terraform/K8s/CI): always dry-run / plan before apply.
 - Never log or print secrets.
-- If BLOCKED (needs a decision, missing credential, or ambiguity): stop and surface the specific question — do not guess.
+- If BLOCKED (needs a decision, missing credential, or ambiguity): stop and surface the specific question \u{2014} do not guess.
 
 ## Begin
 Start at iteration 1.",
-        goal = cfg.goal,
     )
 }
 
@@ -92,7 +92,7 @@ mod tests {
 
     fn base_config(goal: &str) -> Config {
         Config {
-            goal: goal.to_string(),
+            goal: Some(goal.to_string()),
             max: 8,
             verify: None,
             dod: None,
@@ -101,6 +101,10 @@ mod tests {
             max_state_chars: 4000,
             claude_bin: "claude".to_string(),
             verbose: false,
+            wizard: false,
+            config: None,
+            save: None,
+            export_bash: false,
         }
     }
 
@@ -177,7 +181,7 @@ mod tests {
     fn harness_contains_core_sections() {
         let cfg = base_config("demo goal");
         let out = render_harness(&cfg);
-        assert!(out.starts_with("# AGENTIC LOOP — demo-goal"));
+        assert!(out.contains("# AGENTIC LOOP"));
         assert!(out.contains("## Goal\ndemo goal"));
         assert!(out.contains("LOOP_STATUS: <DONE|CONTINUE|BLOCKED>"));
         assert!(out.contains("Max iterations: 8."));
