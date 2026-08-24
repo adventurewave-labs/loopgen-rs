@@ -71,7 +71,7 @@ pub fn validate_input_mode(cfg: &Config) -> Result<InputMode, String> {
     if count == 0 {
         return Err(
             "error: provide a <GOAL>, --wizard, or --config <FILE>. \
-             Run \`loopgen --help\` for usage."
+             Run `loopgen --help` for usage."
                 .to_string(),
         );
     }
