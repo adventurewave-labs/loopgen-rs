@@ -5,7 +5,7 @@ edition = "2021"
 description = "Agentic loop runner for Claude Code — drives `claude -p` in an iterative loop with a LOOP_STATUS termination contract. Supports interactive wizard, TOML configs, and bash export."
 license = "MIT"
 repository = "https://github.com/adventurewave-labs/loopgen-rs"
-keywords = ["claude", "claude-code", "agent", "automation", "cli", "loop"]
+keywords = ["claude", "cli", "agent", "automation", "loop"]
 categories = ["command-line-utilities", "development-tools"]
 readme = "README.md"
 
