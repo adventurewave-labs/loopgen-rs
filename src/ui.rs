@@ -36,6 +36,9 @@ pub fn yellow(s: &str) -> String {
 pub fn red(s: &str) -> String {
     c(s, "31")
 }
+/// Not currently called outside its own test/`step` -- kept for a consistent
+/// full color set (bold/dim/cyan/green/yellow/red/magenta).
+#[allow(dead_code)]
 pub fn magenta(s: &str) -> String {
     c(s, "35")
 }
@@ -65,6 +68,9 @@ pub fn success(msg: &str) {
 pub fn error(msg: &str) {
     eprintln!("{} {}", red("✗"), msg);
 }
+/// Not currently called from the wizard flow -- kept for a future
+/// step-numbering UI, tested below.
+#[allow(dead_code)]
 pub fn step(msg: &str) {
     println!("{} {}", magenta("▸"), bold(msg));
 }
