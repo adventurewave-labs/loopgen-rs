@@ -88,6 +88,10 @@ impl FileConfig {
     /// Convert to CLI argument strings suitable for building a `cli::Config`.
     ///
     /// Returns a vector where the first element is the goal, followed by flag pairs.
+    ///
+    /// Not currently called from `main` (which round-trips through `file_config_to_cli`
+    /// instead) -- kept as tested public API for callers who want a flag-string form.
+    #[allow(dead_code)]
     pub fn to_cli_args(&self) -> Vec<String> {
         let mut args = vec![self.goal.clone()];
         args.push("--max".to_string());
@@ -187,9 +191,11 @@ mod tests {
 
     #[test]
     fn to_cli_args_nondefault_claude_bin() {
-        let mut cfg = FileConfig::default();
-        cfg.goal = "test".to_string();
-        cfg.claude_bin = "/usr/local/bin/claude".to_string();
+        let cfg = FileConfig {
+            goal: "test".to_string(),
+            claude_bin: "/usr/local/bin/claude".to_string(),
+            ..Default::default()
+        };
         let args = cfg.to_cli_args();
         assert!(args.contains(&"--claude-bin".to_string()));
         assert!(args.contains(&"/usr/local/bin/claude".to_string()));
@@ -197,9 +203,11 @@ mod tests {
 
     #[test]
     fn to_cli_args_verbose() {
-        let mut cfg = FileConfig::default();
-        cfg.goal = "test".to_string();
-        cfg.verbose = true;
+        let cfg = FileConfig {
+            goal: "test".to_string(),
+            verbose: true,
+            ..Default::default()
+        };
         let args = cfg.to_cli_args();
         assert!(args.contains(&"--verbose".to_string()));
     }
