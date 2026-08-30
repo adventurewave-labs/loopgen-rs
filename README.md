@@ -189,3 +189,27 @@ Licensed under the [MIT License](LICENSE). © 2026 Marcus Patman.
 Boris Cherny — the creator of Claude Code — has talked about how his own workflow moved away from one-shot prompting. Rather than hand-crafting a single perfect prompt and hoping for a one-shot result, he increasingly *writes loops*: hand the agent a goal and let it iterate — act, check, correct — until the goal is actually met. The prompt stops being the deliverable; the loop is.
 
 `loopgen` is that idea as a tool. You give it the outcome you want; it compiles the goal into a structured loop harness and drives Claude Code (`claude -p`) around a PLAN → ACT → VERIFY → REPORT cycle until a termination contract trips: `DONE` (optionally gated on a real verify command), `BLOCKED` (it needs a decision from you), or a hard `--max` iteration cap so a run can never spin forever. Stop writing prompts. Start writing loops.
+
+## loopgen vs. plain loops and Ralph
+
+Every agentic loop technique is some version of "call `claude -p` repeatedly until something is true." The differences are in what "something is true" means and how much state survives between calls.
+
+**A plain `while` loop** —
+
+```sh
+while :; do claude -p "get the tests green"; done
+```
+
+— has no termination contract at all. It runs until you `Ctrl+C` it or your terminal dies. Nothing carries between iterations except whatever Claude itself wrote to disk; each call starts blind to what the last one concluded, and a `DONE`-sounding response is just prose in a transcript, not a signal anything reads.
+
+**The [Ralph Wiggum technique](https://github.com/ghuntley/how-to-ralph-wiggum)** is a real step up: `while :; do cat PROMPT.md | claude; done`, with an `IMPLEMENTATION_PLAN.md` persisted on disk as shared state, a documented file convention (`PROMPT.md`, `AGENTS.md`, `specs/`), and (typically) `--dangerously-skip-permissions` so it can run unattended. Each iteration re-reads the plan, picks the most important remaining task, implements it, commits, and exits with a fresh context window. It's a genuinely good pattern — minimal, fully inspectable, no binary dependency beyond `claude` itself. But the stop condition is still implicit: nothing parses a machine-readable "done" signal, so termination is still "a human watches and hits Ctrl+C" or an external max-iteration wrapper, and "is this actually done" is left entirely to the model's own judgment — there's no equivalent of a verify gate that can override an optimistic `DONE`.
+
+**`loopgen`** keeps Ralph's core insight (fresh context per iteration, disk/prompt-carried state, let the model do the work) and adds the parts a plain loop or Ralph leave to chance:
+
+- a `LOOP_STATUS: <DONE|CONTINUE|BLOCKED>` line the harness actually parses, not just prose the model happens to write
+- distinct exit codes (`0`/`2`/`3`/`1`) so a wrapper script, CI job, or another agent can act on the result programmatically instead of scraping a transcript
+- an optional `--verify` gate: a `DONE` claim is only accepted if a real command exits 0, otherwise the loop is forced back to `CONTINUE`
+- a hard `--max` cap as a safety rail that doesn't depend on anyone watching
+- state carried explicitly in the prompt (capped, tail-truncated) rather than re-derived by the model from a plan file each time
+
+None of this makes `loopgen` strictly better than Ralph — "just markdown files and a bash one-liner" is a legitimate, more inspectable design point if you'd rather read `IMPLEMENTATION_PLAN.md` than trust a binary's parsing. `loopgen` is for when you want the termination contract and the verify gate enforced by the harness itself, not by convention.
