@@ -1,8 +1,8 @@
 [package]
 name = "loopgen"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
-description = "Agentic loop runner for Claude Code — drives `claude -p` in an iterative loop with a LOOP_STATUS termination contract. Supports interactive wizard, TOML configs, and bash export."
+description = "Agentic loop runner for Claude Code — drives `claude -p` in an iterative loop with a LOOP_STATUS termination contract. Supports interactive wizard, TOML configs, named loops, command-check stop mode, and bash export."
 license = "MIT"
 repository = "https://github.com/adventurewave-labs/loopgen-rs"
 keywords = ["claude", "cli", "agent", "automation", "loop"]
@@ -23,3 +23,6 @@ toml = "0.8"
 
 [profile.release]
 strip = true
+
+[dev-dependencies]
+tempfile = "3"
