@@ -25,6 +25,9 @@ pub fn render(cfg: &FileConfig) -> String {
     if let Some(v) = &cfg.verify {
         s.push_str(&format!("VERIFY={}\n", sh(v)));
     }
+    if let Some(u) = &cfg.until {
+        s.push_str(&format!("UNTIL={}\n", sh(u)));
+    }
     if let Some(d) = &cfg.dod {
         s.push_str(&format!("DOD={}\n", sh(d)));
     }
@@ -51,6 +54,12 @@ pub fn render(cfg: &FileConfig) -> String {
                 cmd
             ));
         }
+        (None, None) if cfg.until.is_some() => {
+            s.push_str(&format!(
+                "The stated goal is achieved and the check command (`{}`) exits 0.\n",
+                cfg.until.as_deref().unwrap_or_default()
+            ));
+        }
         (None, Some(dod_text)) => {
             s.push_str(dod_text);
             s.push('\n');
@@ -67,7 +76,9 @@ pub fn render(cfg: &FileConfig) -> String {
     s.push_str("2. ACT    — do it. For non-trivial work spawn a worker; otherwise act directly.\n");
     s.push_str("3. VERIFY — check progress against the Definition of Done.\n");
     s.push_str("4. REPORT — emit exactly one line, this format:\n");
-    s.push_str("          LOOP_STATUS: <DONE|CONTINUE|BLOCKED> | iter <n>/${MAX} | <one-line note>\n");
+    s.push_str(
+        "          LOOP_STATUS: <DONE|CONTINUE|BLOCKED> | iter <n>/${MAX} | <one-line note>\n",
+    );
     s.push_str("5. CARRY  — update a running STATE summary.\n");
     s.push('\n');
     s.push_str("## Termination\n");
@@ -89,7 +100,9 @@ pub fn render(cfg: &FileConfig) -> String {
     s.push_str("  PROMPT=\"${HARNESS}\n\n## Running state (prior iterations)\n${STATE}\n\n## This is iteration ${i} of ${MAX}. Do ONE increment, then emit the LOOP_STATUS line.\"\n\n");
 
     // Invoke claude
-    s.push_str("  RESPONSE=$(claude -p \"${PROMPT}\" --output-format json ${MODEL_OPT} 2>/dev/null)\n\n");
+    s.push_str(
+        "  RESPONSE=$(claude -p \"${PROMPT}\" --output-format json ${MODEL_OPT} 2>/dev/null)\n\n",
+    );
 
     // Extract result text
     s.push_str("  # Try to extract .result from JSON; fall back to raw output\n");
@@ -105,6 +118,25 @@ pub fn render(cfg: &FileConfig) -> String {
     s.push_str("  # Extract LOOP_STATUS (case-insensitive, last match wins)\n");
     s.push_str("  STATUS=$(echo \"${RESULT}\" | grep -ioP 'LOOP_STATUS:\\s*(DONE|CONTINUE|BLOCKED)' | tail -1 | grep -ioP '(DONE|CONTINUE|BLOCKED)')\n");
     s.push_str("  : \"${STATUS:=CONTINUE}\"\n\n");
+
+    // `--until`: the check command decides completion (BLOCKED still wins).
+    if cfg.until.is_some() {
+        s.push_str("  UNTIL_FEEDBACK=\"\"\n");
+        s.push_str("  if [ \"${STATUS}\" != \"BLOCKED\" ]; then\n");
+        s.push_str("    if UNTIL_OUT=$(eval \"${UNTIL}\" 2>&1); then\n");
+        s.push_str("      echo \"  until check passed: ${UNTIL}\"\n");
+        s.push_str("      STATUS=DONE\n");
+        s.push_str("    else\n");
+        s.push_str("      if [ \"${STATUS}\" = \"DONE\" ]; then\n");
+        s.push_str(
+            "        echo \"  DONE claimed but until check failing — continuing as CONTINUE\"\n",
+        );
+        s.push_str("        STATUS=CONTINUE\n");
+        s.push_str("      fi\n");
+        s.push_str("      UNTIL_FEEDBACK=\"until check '${UNTIL}' still failing. Output: $(printf '%s' \"${UNTIL_OUT}\" | tail -c 2000)\"\n");
+        s.push_str("    fi\n");
+        s.push_str("  fi\n\n");
+    }
 
     // Handle DONE with optional verify
     s.push_str("  case \"${STATUS}\" in\n");
@@ -137,6 +169,9 @@ pub fn render(cfg: &FileConfig) -> String {
     s.push_str("  # Append truncated summary to state\n");
     s.push_str("  SUMMARY=$(echo \"${RESULT}\" | tail -c 200)\n");
     s.push_str("  STATE=\"${STATE}\n\n[iteration ${i}] ${SUMMARY}\"\n");
+    if cfg.until.is_some() {
+        s.push_str("  [ -n \"${UNTIL_FEEDBACK}\" ] && STATE=\"${STATE}\n${UNTIL_FEEDBACK}\"\n");
+    }
     s.push_str("  # Cap state at 4000 chars (keep tail)\n");
     s.push_str("  if [ ${#STATE} -gt 4000 ]; then\n");
     s.push_str("    STATE=\"...(truncated)...${STATE: -4000}\"\n");
@@ -159,6 +194,7 @@ mod tests {
             goal: "test goal".to_string(),
             max: 4,
             verify: None,
+            until: None,
             dod: None,
             model: None,
             max_state_chars: 4000,
@@ -259,5 +295,24 @@ mod tests {
         let out = render(&minimal_cfg());
         assert!(out.contains("STATE="));
         assert!(out.contains("truncated"));
+    }
+
+    #[test]
+    fn contains_until_when_set() {
+        let cfg = FileConfig {
+            until: Some("cargo test".to_string()),
+            ..minimal_cfg()
+        };
+        let out = render(&cfg);
+        assert!(out.contains("UNTIL='cargo test'"));
+        assert!(out.contains("until check passed"));
+        assert!(out.contains("UNTIL_FEEDBACK"));
+        assert!(out.contains("check command (`cargo test`) exits 0"));
+    }
+
+    #[test]
+    fn no_until_when_unset() {
+        let out = render(&minimal_cfg());
+        assert!(!out.contains("UNTIL"));
     }
 }

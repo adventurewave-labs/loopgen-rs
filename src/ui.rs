@@ -47,12 +47,7 @@ pub fn banner(title: &str) {
     let width = title.chars().count();
     let line = "─".repeat(width + 2);
     println!("{}", cyan(&format!("┌{}┐", line)));
-    println!(
-        "{} {} {}",
-        cyan("│"),
-        bold(title),
-        cyan("│")
-    );
+    println!("{} {} {}", cyan("│"), bold(title), cyan("│"));
     println!("{}", cyan(&format!("└{}┘", line)));
 }
 
@@ -96,11 +91,7 @@ pub fn ask_text(prompt: &str, default: Option<&str>) -> io::Result<String> {
     loop {
         match default {
             None => print!("{} ", cyan(&format!("{}:", prompt))),
-            Some("") => print!(
-                "{} {} ",
-                cyan(&format!("{}:", prompt)),
-                dim("(optional)")
-            ),
+            Some("") => print!("{} {} ", cyan(&format!("{}:", prompt)), dim("(optional)")),
             Some(d) => print!(
                 "{} {} ",
                 cyan(&format!("{}:", prompt)),
@@ -139,7 +130,11 @@ pub fn ask_text(prompt: &str, default: Option<&str>) -> io::Result<String> {
 }
 
 pub fn ask_optional(prompt: &str) -> io::Result<Option<String>> {
-    print!("{} {} ", cyan(&format!("{}:", prompt)), dim("(press Enter to skip)"));
+    print!(
+        "{} {} ",
+        cyan(&format!("{}:", prompt)),
+        dim("(press Enter to skip)")
+    );
     flush();
     match read_line_opt()? {
         None => Ok(None),
@@ -151,11 +146,7 @@ pub fn ask_optional(prompt: &str) -> io::Result<Option<String>> {
 }
 
 pub fn ask_bool(prompt: &str, default: bool) -> io::Result<bool> {
-    let hint = if default {
-        "[Y/n]"
-    } else {
-        "[y/N]"
-    };
+    let hint = if default { "[Y/n]" } else { "[y/N]" };
     loop {
         print!("{} {} ", cyan(&format!("{}:", prompt)), dim(hint));
         flush();
