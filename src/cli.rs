@@ -20,6 +20,11 @@ pub struct Config {
     #[arg(long)]
     pub verify: Option<String>,
 
+    /// Shell command checked after every iteration; the loop ends DONE as soon
+    /// as it exits 0, and its failing output is fed into the next iteration.
+    #[arg(long)]
+    pub until: Option<String>,
+
     /// Explicit Definition of Done; otherwise auto-derived.
     #[arg(long)]
     pub dod: Option<String>,
@@ -52,40 +57,76 @@ pub struct Config {
     #[arg(long, conflicts_with = "goal")]
     pub config: Option<String>,
 
+    /// Run a named loop from the loop store (see --save-as, --list).
+    #[arg(long, value_name = "NAME", conflicts_with = "goal")]
+    pub run: Option<String>,
+
     /// Save the effective configuration to a TOML file and exit.
     #[arg(long)]
     pub save: Option<String>,
 
+    /// Save the effective configuration as a named loop in the store and exit.
+    #[arg(long, value_name = "NAME")]
+    pub save_as: Option<String>,
+
     /// Export the loop as a standalone bash script and exit.
     #[arg(long)]
     pub export_bash: bool,
+
+    /// List the named loops in the store and exit.
+    #[arg(long)]
+    pub list: bool,
+
+    /// Print a named loop's stored configuration and exit.
+    #[arg(long, value_name = "NAME")]
+    pub show: Option<String>,
+
+    /// Delete a named loop from the store and exit.
+    #[arg(long, value_name = "NAME")]
+    pub remove: Option<String>,
 }
 
-/// Validate that exactly one input mode is active (goal, wizard, or config).
+/// Validate that exactly one mode is active: an input mode (goal, wizard,
+/// config, or named loop) or a store-management action (list, show, remove).
 pub fn validate_input_mode(cfg: &Config) -> Result<InputMode, String> {
     let has_goal = cfg.goal.is_some();
     let has_wizard = cfg.wizard;
     let has_config = cfg.config.is_some();
+    let has_run = cfg.run.is_some();
 
-    let count = has_goal as u8 + has_wizard as u8 + has_config as u8;
+    let manage_count = cfg.list as u8 + cfg.show.is_some() as u8 + cfg.remove.is_some() as u8;
+    let count = has_goal as u8 + has_wizard as u8 + has_config as u8 + has_run as u8;
+
+    if manage_count > 0 {
+        if manage_count > 1 || count > 0 {
+            return Err(
+                "error: --list, --show, and --remove each run on their own; \
+                 do not combine them with each other or with a loop input."
+                    .to_string(),
+            );
+        }
+        return Ok(InputMode::Manage);
+    }
     if count == 0 {
         return Err(
-            "error: provide a <GOAL>, --wizard, or --config <FILE>. \
+            "error: provide a <GOAL>, --wizard, --config <FILE>, or --run <NAME>. \
              Run `loopgen --help` for usage."
                 .to_string(),
         );
     }
     if count > 1 {
         return Err(
-            "error: <GOAL>, --wizard, and --config are mutually exclusive.".to_string(),
+            "error: <GOAL>, --wizard, --config, and --run are mutually exclusive.".to_string(),
         );
     }
     Ok(if has_goal {
         InputMode::Goal
     } else if has_wizard {
         InputMode::Wizard
-    } else {
+    } else if has_config {
         InputMode::ConfigFile
+    } else {
+        InputMode::Named
     })
 }
 
@@ -94,6 +135,10 @@ pub enum InputMode {
     Goal,
     Wizard,
     ConfigFile,
+    /// `--run <NAME>`: load a loop from the named-loop store.
+    Named,
+    /// `--list`, `--show`, or `--remove`: manage the named-loop store.
+    Manage,
 }
 
 #[cfg(test)]
@@ -105,6 +150,7 @@ mod tests {
             goal: Some("test goal".to_string()),
             max: 8,
             verify: None,
+            until: None,
             dod: None,
             model: None,
             dry_run: false,
@@ -113,8 +159,13 @@ mod tests {
             verbose: false,
             wizard: false,
             config: None,
+            run: None,
             save: None,
+            save_as: None,
             export_bash: false,
+            list: false,
+            show: None,
+            remove: None,
         }
     }
 
@@ -158,6 +209,50 @@ mod tests {
     fn reject_goal_and_config() {
         let mut cfg = base_config();
         cfg.config = Some("f.toml".to_string());
+        assert!(validate_input_mode(&cfg).is_err());
+    }
+
+    #[test]
+    fn validate_named_mode() {
+        let mut cfg = base_config();
+        cfg.goal = None;
+        cfg.run = Some("fix-tests".to_string());
+        assert_eq!(validate_input_mode(&cfg).unwrap(), InputMode::Named);
+    }
+
+    #[test]
+    fn reject_run_and_config() {
+        let mut cfg = base_config();
+        cfg.goal = None;
+        cfg.run = Some("fix-tests".to_string());
+        cfg.config = Some("f.toml".to_string());
+        assert!(validate_input_mode(&cfg).is_err());
+    }
+
+    #[test]
+    fn validate_manage_modes() {
+        for set in [
+            |c: &mut Config| c.list = true,
+            |c: &mut Config| c.show = Some("x".to_string()),
+            |c: &mut Config| c.remove = Some("x".to_string()),
+        ] {
+            let mut cfg = base_config();
+            cfg.goal = None;
+            set(&mut cfg);
+            assert_eq!(validate_input_mode(&cfg).unwrap(), InputMode::Manage);
+        }
+    }
+
+    #[test]
+    fn reject_manage_with_goal_or_other_manage() {
+        let mut cfg = base_config();
+        cfg.list = true;
+        assert!(validate_input_mode(&cfg).is_err());
+
+        let mut cfg = base_config();
+        cfg.goal = None;
+        cfg.list = true;
+        cfg.show = Some("x".to_string());
         assert!(validate_input_mode(&cfg).is_err());
     }
 }

@@ -20,12 +20,16 @@ pub fn run() -> io::Result<FileConfig> {
     let max = ui::ask_u64("Max iterations (safety cap)", 8)? as u32;
     println!();
 
-    let verify = ui::ask_optional(
-        "Verify command (shell cmd; DONE is only accepted if this exits 0)",
+    let verify =
+        ui::ask_optional("Verify command (shell cmd; DONE is only accepted if this exits 0)")?;
+    println!();
+
+    let until = ui::ask_optional(
+        "Until command (shell cmd checked every iteration; loop ends DONE when it exits 0)",
     )?;
     println!();
 
-    let dod = if verify.is_some() {
+    let dod = if verify.is_some() || until.is_some() {
         None
     } else {
         ui::ask_optional("Definition of Done (auto-derived if blank)")?
@@ -42,6 +46,7 @@ pub fn run() -> io::Result<FileConfig> {
         goal,
         max,
         verify,
+        until,
         dod,
         model,
         max_state_chars: 4000,
@@ -72,13 +77,20 @@ pub fn post_create(cfg: &FileConfig) -> io::Result<bool> {
         })
     );
     println!(
+        "  until:         {}",
+        ui::dim(cfg.until.as_deref().unwrap_or("(none)"))
+    );
+    println!(
         "  model:         {}",
         ui::dim(match &cfg.model {
             Some(m) => m.as_str(),
             None => "default",
         })
     );
-    println!("  verbose:       {}", if cfg.verbose { "yes" } else { "no" });
+    println!(
+        "  verbose:       {}",
+        if cfg.verbose { "yes" } else { "no" }
+    );
     println!();
 
     let save = ui::ask_bool("Save configuration to loop.toml?", true)?;
@@ -87,6 +99,22 @@ pub fn post_create(cfg: &FileConfig) -> io::Result<bool> {
         match cfg.save_to_file(&path) {
             Ok(()) => ui::success(&format!("saved to {}", path)),
             Err(e) => ui::error(&format!("failed to save: {}", e)),
+        }
+    }
+    println!();
+
+    let named = ui::ask_bool(
+        "Save as a named loop (re-run later with --run <NAME>)?",
+        false,
+    )?;
+    if named {
+        let name = ui::ask_text("Loop name", None)?;
+        match crate::store::LoopStore::from_env().save(&name, cfg) {
+            Ok(path) => ui::success(&format!(
+                "saved '{name}' to {} — run it with: loopgen --run {name}",
+                path.display()
+            )),
+            Err(e) => ui::error(&format!("failed to save named loop: {e:#}")),
         }
     }
     println!();

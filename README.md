@@ -9,6 +9,10 @@ contract trips. It is the "all I do is write loops for Claude" pattern, packaged
 as a small, dependable CLI: a hard iteration cap, an optional verify gate, and a
 `BLOCKED` escape hatch so a run never spins forever or terminates silently.
 
+Absorbs the former [adventurewave-labs/cloop](https://github.com/adventurewave-labs/cloop):
+its named-loop store and command-check stop mode now live here as `--save-as` /
+`--run` / `--list` and `--until`.
+
 ```text
 loopgen "get the test suite green" --verify "cargo test" --max 6
 ```
@@ -48,6 +52,42 @@ verify = "cargo test"
 
 Then run with `loopgen --config loop.toml`. CLI flags override file values when both are set.
 
+### Named loops
+
+Save a loop you have dialed in under a name, then re-run it by name:
+
+```sh
+loopgen "get the test suite green" --until "cargo test" --max 12 --save-as fix-tests
+loopgen --list                  # fix-tests  get the test suite green
+loopgen --show fix-tests        # print the stored TOML
+loopgen --run fix-tests         # run it (CLI flags such as --max still override)
+loopgen --remove fix-tests      # delete it
+```
+
+Named loops are ordinary loopgen TOML files stored at
+`$LOOPGEN_DIR/loops/<NAME>.toml` (default `$XDG_CONFIG_HOME/loopgen` or
+`~/.config/loopgen`). Names may use letters, digits, `-` and `_`. The wizard
+also offers to save its result as a named loop.
+
+### Command-check stop mode (`--until`)
+
+`--until <CMD>` makes a shell command the authority on completion. After every
+iteration loopgen runs it via `sh -c`:
+
+- exit 0 → the loop ends `DONE`, even if the model said `CONTINUE`;
+- non-zero → a model `DONE` claim is downgraded to `CONTINUE`, and the tail of
+  the command's output is added to the running state so the next iteration sees
+  exactly what is still failing.
+
+`BLOCKED` still stops the loop, and `--max` still caps it. If `--verify` is also
+set, it must pass too before the loop ends.
+
+```sh
+loopgen "make the parser tests pass" --until "cargo test -p parser" --max 10
+```
+
+Compare `--verify`, which only runs when the model claims `DONE`.
+
 ### Bash export
 
 Export any loop as a standalone, portable bash script:
@@ -66,6 +106,8 @@ The exported script uses only `claude`, `grep`, and `python3` — no Rust requir
 loopgen [OPTIONS] <GOAL>
 loopgen --wizard
 loopgen --config loop.toml
+loopgen --run <NAME>
+loopgen --list | --show <NAME> | --remove <NAME>
 ```
 
 | Flag | Type | Default | Meaning |
@@ -73,6 +115,7 @@ loopgen --config loop.toml
 | `<GOAL>` | positional | — (required) | The outcome to drive toward |
 | `--max <N>` | `u32` | `8` | Hard iteration cap (safety rail) |
 | `--verify <CMD>` | string | none | Shell command; `DONE` is only accepted if it exits 0 |
+| `--until <CMD>` | string | none | Shell command checked after every iteration; loop ends `DONE` when it exits 0, failing output feeds the next iteration |
 | `--dod <TEXT>` | string | none | Explicit Definition of Done; otherwise auto-derived |
 | `--model <NAME>` | string | none | Forwarded to `claude -p --model` |
 | `--dry-run` | flag | false | Render the harness, print it, exit 0 (no claude calls) |
@@ -81,7 +124,12 @@ loopgen --config loop.toml
 | `-v, --verbose` | flag | false | Echo each invocation and raw status lines |
 | `--wizard` | flag | false | Interactive configuration wizard |
 | `--config <FILE>` | string | none | Load configuration from a TOML file |
+| `--run <NAME>` | string | none | Run a named loop from the store |
 | `--save <FILE>` | string | none | Save effective config to TOML and exit |
+| `--save-as <NAME>` | string | none | Save effective config as a named loop and exit |
+| `--list` | flag | false | List named loops and exit |
+| `--show <NAME>` | string | none | Print a named loop's TOML and exit |
+| `--remove <NAME>` | string | none | Delete a named loop and exit |
 | `--export-bash` | flag | false | Export as a standalone bash script and exit |
 
 ## Examples
@@ -153,9 +201,12 @@ Each iteration `loopgen`:
    LOOP_STATUS: <DONE|CONTINUE|BLOCKED> | iter <n>/<max> | <one-line note>
    ```
 
-4. If the status is `DONE` and `--verify` is set, runs the verify command via
+4. If `--until` is set (and the status is not `BLOCKED`), runs it: exit 0
+   makes the iteration `DONE`; otherwise `DONE` is downgraded to `CONTINUE` and
+   the command's output is carried into the running state.
+5. If the status is `DONE` and `--verify` is set, runs the verify command via
    `sh -c`; a non-zero exit downgrades the result to `CONTINUE`.
-5. Appends a trimmed summary of the result to the running state (capped at
+6. Appends a trimmed summary of the result to the running state (capped at
    `--max-state-chars`, keeping the tail when over) and continues.
 
 The loop **continues** while the status is `CONTINUE` and `iter < --max`. It
@@ -167,7 +218,7 @@ does not silently end the run.
 
 | Code | Meaning |
 |---|---|
-| `0` | Goal reported `DONE` (and verified, if `--verify` was set) |
+| `0` | Goal reported `DONE` (or `--until` passed), and verified if `--verify` was set |
 | `2` | Loop stopped because the model reported `BLOCKED` |
 | `3` | Reached `--max` without `DONE` |
 | `1` | Internal/setup error (e.g. the `claude` binary was not found) |
@@ -178,6 +229,7 @@ does not silently end the run.
 cargo build --release
 cargo test
 cargo clippy --all-targets -- -D warnings
+cargo fmt --check
 ```
 
 ## License
@@ -214,4 +266,4 @@ while :; do claude -p "get the tests green"; done
 
 None of this makes `loopgen` strictly better than Ralph — "just markdown files and a bash one-liner" is a legitimate, more inspectable design point if you'd rather read `IMPLEMENTATION_PLAN.md` than trust a binary's parsing. `loopgen` is for when you want the termination contract and the verify gate enforced by the harness itself, not by convention.
 
-**cloop**, the org's other Claude Code loop runner, takes the opposite trade-off: no parsed status line and no verify gate, but a wizard-first setup and named, saved loop files under `~/.config/cloop/` you can list, show, edit, and re-run by name. Pick `loopgen` when you want the harness to enforce the contract and gate `DONE` on a real command; pick [`cloop`](https://github.com/adventurewave-labs/cloop) when you want a zero-config wizard and fast reuse of loops you've already dialed in.
+**cloop**, the org's former second loop runner, has been folded into `loopgen`: its named, re-runnable loop files are the `--save-as` / `--run` store, and its "loop until this command exits 0" mode is `--until`.

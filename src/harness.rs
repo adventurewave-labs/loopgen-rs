@@ -20,16 +20,19 @@ pub fn slugify(goal: &str) -> String {
 }
 
 /// Resolve the Definition of Done: explicit `--dod` wins, otherwise auto-derive
-/// based on whether a `--verify` command is present.
+/// based on whether a `--verify` or `--until` command is present.
 pub fn definition_of_done(cfg: &Config) -> String {
     if let Some(dod) = &cfg.dod {
         return dod.clone();
     }
-    match &cfg.verify {
-        Some(cmd) => format!(
+    match (&cfg.verify, &cfg.until) {
+        (Some(cmd), _) => format!(
             "The stated goal is achieved and the verify command (`{cmd}`) exits 0."
         ),
-        None => "The stated goal is fully achieved, with concrete evidence cited for each success criterion."
+        (None, Some(cmd)) => format!(
+            "The stated goal is achieved and the check command (`{cmd}`) exits 0."
+        ),
+        (None, None) => "The stated goal is fully achieved, with concrete evidence cited for each success criterion."
             .to_string(),
     }
 }
@@ -43,8 +46,14 @@ pub fn render_harness(cfg: &Config) -> String {
     let max = cfg.max;
 
     let verify_block = match &cfg.verify {
+        Some(cmd) => {
+            format!("\n          Run: {cmd}\n          It MUST exit 0 before you may report DONE.")
+        }
+        None => String::new(),
+    };
+    let until_block = match &cfg.until {
         Some(cmd) => format!(
-            "\n          Run: {cmd}\n          It MUST exit 0 before you may report DONE."
+            "\n          The runner also checks `{cmd}` after every iteration and ends\n          the loop as DONE the moment it exits 0; while it fails, its output\n          is added to the running state for the next iteration."
         ),
         None => String::new(),
     };
@@ -61,7 +70,7 @@ You are the loop CONTROLLER. Execute this as an ITERATIVE loop, not a single pas
 ## Cycle (repeat each iteration)
 1. PLAN   \u{2014} state the smallest next increment toward the goal.
 2. ACT    \u{2014} do it. For non-trivial work spawn a worker; otherwise act directly.
-3. VERIFY \u{2014} check progress against the Definition of Done.{verify_block}
+3. VERIFY \u{2014} check progress against the Definition of Done.{verify_block}{until_block}
 4. REPORT \u{2014} emit exactly one line, this format:
           LOOP_STATUS: <DONE|CONTINUE|BLOCKED> | iter <n>/{max} | <one-line note>
 5. CARRY  \u{2014} update a running STATE summary: what is done, what remains, key decisions.
@@ -95,6 +104,7 @@ mod tests {
             goal: Some(goal.to_string()),
             max: 8,
             verify: None,
+            until: None,
             dod: None,
             model: None,
             dry_run: false,
@@ -103,8 +113,13 @@ mod tests {
             verbose: false,
             wizard: false,
             config: None,
+            run: None,
             save: None,
+            save_as: None,
             export_bash: false,
+            list: false,
+            show: None,
+            remove: None,
         }
     }
 
@@ -186,5 +201,30 @@ mod tests {
         assert!(out.contains("LOOP_STATUS: <DONE|CONTINUE|BLOCKED>"));
         assert!(out.contains("Max iterations: 8."));
         assert!(out.trim_end().ends_with("Start at iteration 1."));
+    }
+
+    #[test]
+    fn until_block_present_with_until() {
+        let mut cfg = base_config("ship it");
+        cfg.until = Some("cargo test".to_string());
+        let out = render_harness(&cfg);
+        assert!(out.contains("The runner also checks `cargo test` after every iteration"));
+        assert!(!out.contains("Run:"));
+    }
+
+    #[test]
+    fn until_block_absent_without_until() {
+        let out = render_harness(&base_config("ship it"));
+        assert!(!out.contains("The runner also checks"));
+    }
+
+    #[test]
+    fn dod_auto_with_until_only() {
+        let mut cfg = base_config("ship it");
+        cfg.until = Some("make check".to_string());
+        assert_eq!(
+            definition_of_done(&cfg),
+            "The stated goal is achieved and the check command (`make check`) exits 0."
+        );
     }
 }
