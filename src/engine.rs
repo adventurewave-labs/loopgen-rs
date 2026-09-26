@@ -55,9 +55,7 @@ fn compose_prompt(harness: &str, state: &str, iter: u32, max: u32) -> String {
 /// not the expected JSON.
 fn extract_result_text(stdout: &str, verbose: bool) -> String {
     match serde_json::from_str::<ClaudeJson>(stdout) {
-        Ok(ClaudeJson {
-            result: Some(text),
-        }) => text,
+        Ok(ClaudeJson { result: Some(text) }) => text,
         Ok(ClaudeJson { result: None }) => {
             if verbose {
                 eprintln!("warning: claude JSON had no `result` field; using raw stdout");
@@ -97,6 +95,59 @@ fn run_verify(cmd: &str) -> Result<Option<i32>> {
         .status()
         .with_context(|| format!("failed to run verify command: {cmd}"))?;
     Ok(status.code())
+}
+
+/// Longest slice of `--until` output carried into the next iteration.
+const UNTIL_FEEDBACK_CHARS: usize = 2000;
+
+/// Outcome of one `--until` check.
+struct CheckRun {
+    /// Exit code, or `None` when terminated by a signal.
+    code: Option<i32>,
+    /// Combined stdout + stderr.
+    output: String,
+}
+
+/// Run the `--until` command via `sh -c`, capturing combined output.
+fn run_until(cmd: &str) -> Result<CheckRun> {
+    let out = Command::new("sh")
+        .arg("-c")
+        .arg(cmd)
+        .output()
+        .with_context(|| format!("failed to run until command: {cmd}"))?;
+    let mut output = String::from_utf8_lossy(&out.stdout).into_owned();
+    output.push_str(&String::from_utf8_lossy(&out.stderr));
+    Ok(CheckRun {
+        code: out.status.code(),
+        output,
+    })
+}
+
+/// Describe an exit code for notes and feedback.
+fn describe_exit(code: Option<i32>) -> String {
+    match code {
+        Some(c) => format!("exit {c}"),
+        None => "terminated by signal".to_string(),
+    }
+}
+
+/// Format a failing `--until` check as feedback for the next iteration,
+/// keeping only the tail of long output (where failures usually are).
+fn until_feedback(cmd: &str, code: Option<i32>, output: &str) -> String {
+    let trimmed = output.trim();
+    let count = trimmed.chars().count();
+    let body = if trimmed.is_empty() {
+        "(no output)".to_string()
+    } else if count > UNTIL_FEEDBACK_CHARS {
+        let tail: String = trimmed.chars().skip(count - UNTIL_FEEDBACK_CHARS).collect();
+        format!("…(truncated)…{tail}")
+    } else {
+        trimmed.to_string()
+    };
+    format!(
+        "until check `{cmd}` still failing ({}). Output:\n{body}",
+        describe_exit(code)
+    )
 }
 
 /// Invoke claude once and return its captured stdout.
@@ -163,9 +214,10 @@ pub fn run(cfg: &Config) -> Result<LoopOutcome> {
         let result_text = extract_result_text(&stdout, cfg.verbose);
 
         if cfg.verbose {
-            for line in result_text.lines().filter(|l| {
-                l.to_ascii_uppercase().contains("LOOP_STATUS")
-            }) {
+            for line in result_text
+                .lines()
+                .filter(|l| l.to_ascii_uppercase().contains("LOOP_STATUS"))
+            {
                 eprintln!("raw status: {}", line.trim());
             }
         }
@@ -180,6 +232,34 @@ pub fn run(cfg: &Config) -> Result<LoopOutcome> {
                 (Status::Continue, "(no status line emitted)".to_string())
             }
         };
+
+        // `--until` is the authority on completion: when it exits 0 the
+        // iteration counts as DONE regardless of the model's status; while it
+        // fails, DONE is downgraded and its output is fed into the next
+        // iteration. BLOCKED always wins so a stuck model can still surface
+        // its question. Runs before the verify gate, so `--verify` (if also
+        // set) must still pass before the loop ends.
+        let mut feedback = None;
+        if status != Status::Blocked {
+            if let Some(cmd) = &cfg.until {
+                let check = run_until(cmd)?;
+                if cfg.verbose {
+                    eprintln!("until `{cmd}`: {}", describe_exit(check.code));
+                }
+                if check.code == Some(0) {
+                    if status != Status::Done {
+                        note = format!("until check passed — {note}");
+                    }
+                    status = Status::Done;
+                } else {
+                    if status == Status::Done {
+                        status = Status::Continue;
+                        note = format!("until check failing ({})", describe_exit(check.code));
+                    }
+                    feedback = Some(until_feedback(cmd, check.code, &check.output));
+                }
+            }
+        }
 
         // A DONE claim must clear the verify gate, if one was provided.
         if status == Status::Done {
@@ -200,7 +280,11 @@ pub fn run(cfg: &Config) -> Result<LoopOutcome> {
 
         println!("[iter {iter}/{}] {status} — {note}", cfg.max);
 
-        append_state(&mut state, iter, &result_text, cfg.max_state_chars);
+        let carried = match &feedback {
+            Some(f) => format!("{}\n\n{f}", result_text.trim()),
+            None => result_text,
+        };
+        append_state(&mut state, iter, &carried, cfg.max_state_chars);
 
         match status {
             Status::Done => {
@@ -220,6 +304,7 @@ pub fn run(cfg: &Config) -> Result<LoopOutcome> {
     }
 
     let summary = match outcome {
+        LoopOutcome::Done if cfg.until.is_some() => "✓ loop complete: DONE (until check passed).",
         LoopOutcome::Done => "✓ loop complete: goal reported DONE.",
         LoopOutcome::Blocked => "■ loop stopped: BLOCKED — a decision or input is needed.",
         LoopOutcome::MaxReached => {
@@ -285,5 +370,38 @@ mod tests {
         assert!(state.chars().count() <= 20 + "…(truncated)…".chars().count());
         assert!(state.starts_with("…(truncated)…"));
         assert!(state.ends_with('x'));
+    }
+
+    #[test]
+    fn until_feedback_includes_command_exit_and_output() {
+        let f = until_feedback("cargo test", Some(101), "  test foo ... FAILED\n");
+        assert!(f.contains("`cargo test`"));
+        assert!(f.contains("exit 101"));
+        assert!(f.ends_with("test foo ... FAILED"));
+    }
+
+    #[test]
+    fn until_feedback_keeps_tail_of_long_output() {
+        let long = format!("{}END", "a".repeat(UNTIL_FEEDBACK_CHARS * 2));
+        let f = until_feedback("make", Some(2), &long);
+        assert!(f.contains("…(truncated)…"));
+        assert!(f.ends_with("END"));
+        assert!(f.chars().count() < UNTIL_FEEDBACK_CHARS + 200);
+    }
+
+    #[test]
+    fn until_feedback_handles_empty_and_signal() {
+        let f = until_feedback("false", None, "   ");
+        assert!(f.contains("terminated by signal"));
+        assert!(f.contains("(no output)"));
+    }
+
+    #[test]
+    fn run_until_captures_stdout_and_stderr() {
+        let r = run_until("echo out; echo err >&2; exit 4").unwrap();
+        assert_eq!(r.code, Some(4));
+        assert!(r.output.contains("out"));
+        assert!(r.output.contains("err"));
+        assert_eq!(run_until("true").unwrap().code, Some(0));
     }
 }
