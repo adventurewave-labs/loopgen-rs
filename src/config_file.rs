@@ -21,6 +21,10 @@ pub struct FileConfig {
     /// Shell command; DONE is only accepted if it exits 0.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub verify: Option<String>,
+    /// Shell command checked after every iteration; the loop ends DONE as
+    /// soon as it exits 0.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub until: Option<String>,
     /// Explicit Definition of Done; otherwise auto-derived.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dod: Option<String>,
@@ -54,6 +58,7 @@ impl Default for FileConfig {
             goal: String::new(),
             max: default_max(),
             verify: None,
+            until: None,
             dod: None,
             model: None,
             max_state_chars: default_state_chars(),
@@ -66,8 +71,8 @@ impl Default for FileConfig {
 impl FileConfig {
     /// Save the configuration to a TOML file.
     pub fn save_to_file(&self, path: &str) -> io::Result<()> {
-        let toml_str =
-            toml::to_string_pretty(self).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+        let toml_str = toml::to_string_pretty(self)
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
         // Prepend a comment for discoverability.
         let header = "# loopgen configuration\n# Run with: loopgen --config <FILE>\n\n";
         std::fs::write(path, format!("{}{}", header, toml_str))
@@ -81,8 +86,7 @@ impl FileConfig {
 
     /// Parse a TOML string into a FileConfig.
     pub fn parse(toml_str: &str) -> io::Result<Self> {
-        toml::from_str(toml_str)
-            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
+        toml::from_str(toml_str).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
     }
 
     /// Convert to CLI argument strings suitable for building a `cli::Config`.
@@ -99,6 +103,10 @@ impl FileConfig {
         if let Some(v) = &self.verify {
             args.push("--verify".to_string());
             args.push(v.clone());
+        }
+        if let Some(u) = &self.until {
+            args.push("--until".to_string());
+            args.push(u.clone());
         }
         if let Some(d) = &self.dod {
             args.push("--dod".to_string());
@@ -131,6 +139,7 @@ mod tests {
             goal: "get tests green".to_string(),
             max: 12,
             verify: Some("cargo test".to_string()),
+            until: Some("cargo clippy -- -D warnings".to_string()),
             dod: None,
             model: Some("sonnet".to_string()),
             max_state_chars: 8000,
@@ -171,6 +180,7 @@ mod tests {
             goal: "do the thing".to_string(),
             max: 6,
             verify: Some("cargo test".to_string()),
+            until: None,
             dod: None,
             model: Some("opus".to_string()),
             max_state_chars: 4000,
@@ -221,5 +231,23 @@ mod tests {
         };
         let args = cfg.to_cli_args();
         assert!(!args.contains(&"--verify".to_string()));
+    }
+
+    #[test]
+    fn until_parses_and_maps_to_flag() {
+        let cfg = FileConfig::parse("goal = \"g\"\nuntil = \"cargo test\"\n").expect("parse");
+        assert_eq!(cfg.until.as_deref(), Some("cargo test"));
+        let args = cfg.to_cli_args();
+        let i = args
+            .iter()
+            .position(|a| a == "--until")
+            .expect("--until present");
+        assert_eq!(args[i + 1], "cargo test");
+    }
+
+    #[test]
+    fn until_omitted_from_toml_when_unset() {
+        let out = toml::to_string(&FileConfig::default()).expect("serialize");
+        assert!(!out.contains("until"));
     }
 }
