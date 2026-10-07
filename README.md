@@ -1,3 +1,5 @@
+<p align="center"><img src="assets/banner.svg" alt="loopgen-rs — animated banner" width="100%"></p>
+
 # loopgen
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
