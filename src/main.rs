@@ -23,7 +23,7 @@ mod wizard;
 
 use std::process::ExitCode;
 
-use clap::{builder::ValueSource, CommandFactory, Parser};
+use clap::{parser::ValueSource, ArgMatches, CommandFactory, FromArgMatches, Parser};
 
 use cli::{validate_input_mode, Config, InputMode};
 use config_file::FileConfig;
@@ -33,7 +33,7 @@ use store::LoopStore;
 /// opposed to the value coming from a clap default). Decides precedence over
 /// `--config` / `--run` file values, so a flag equal to the default still
 /// overrides the file.
-fn explicitly_set(matches: &clap::ArgMatches, id: &str) -> bool {
+fn explicitly_set(matches: &ArgMatches, id: &str) -> bool {
     matches.value_source(id) == Some(ValueSource::CommandLine)
 }
 
@@ -155,7 +155,7 @@ fn main() -> ExitCode {
 /// (`explicitly_set`), so a file value survives when the flag is absent, and a
 /// flag equal to the clap default still wins — matching the README's "CLI
 /// flags override file values when both are set".
-fn run_from_file(cli: &Config, file_cfg: &FileConfig, matches: &clap::ArgMatches) -> ExitCode {
+fn run_from_file(cli: &Config, file_cfg: &FileConfig, matches: &ArgMatches) -> ExitCode {
     let mut run_cfg = file_config_to_cli(file_cfg);
     if explicitly_set(matches, "max") {
         run_cfg.max = cli.max;
