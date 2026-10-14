@@ -303,7 +303,6 @@ fn exported_script_with_apostrophe_goal_is_valid_bash() {
     assert_eq!(out.status.code(), Some(0));
     let script = env.path("apostrophe.sh");
     fs::write(&script, stdout(&out)).expect("write script");
-    fs::set_permissions(&script, fs::Permissions::from_mode(0o755)).expect("chmod script");
     let check = Command::new("bash")
         .arg("-n")
         .arg(&script)
@@ -323,8 +322,42 @@ fn cli_claude_bin_overrides_config_file_value() {
     let env = Env::new();
     let stub = env.stub_claude(&status_json("DONE"));
     let cfg = env.path("plain.toml");
-    fs::write(&cfg, "goal = \"config goal\"\nmax = 4\n").expect("write config");
+    // The file points at a binary that cannot exist, so the run only
+    // succeeds if the CLI --claude-bin truly overrides the file value.
+    fs::write(
+        &cfg,
+        "goal = \"config goal\"\nmax = 4\nclaude_bin = \"/nonexistent/claude\"\n",
+    )
+    .expect("write config");
     let out = env.loopgen(&["--config", s(&cfg), "--claude-bin", s(&stub)]);
     assert_eq!(out.status.code(), Some(0), "stderr: {}", stderr(&out));
     assert_eq!(env.calls(), 1);
+}
+
+#[test]
+fn cli_max_state_chars_overrides_config_file_value() {
+    let env = Env::new();
+    // A long result whose distinctive EARLYTOKEN7 marker sits near the start:
+    // under the file's 10-char state cap it would be truncated away, so its
+    // presence in prompt 2 proves the CLI value overrode the file.
+    let stub = env.stub_claude(
+        "printf '{\"result\":\"prefix EARLYTOKEN7 then a sizable amount of filler text so the tail cap cannot keep it LOOP_STATUS: CONTINUE | iter n/m | still going\"}'",
+    );
+    let cfg = env.path("tight.toml");
+    fs::write(
+        &cfg,
+        "goal = \"state cap goal\"\nmax = 2\nmax_state_chars = 10\n",
+    )
+    .expect("write config");
+    let out = env.loopgen(&[
+        "--config",
+        s(&cfg),
+        "--max-state-chars",
+        "4000",
+        "--claude-bin",
+        s(&stub),
+    ]);
+    assert_eq!(out.status.code(), Some(3), "stderr: {}", stderr(&out));
+    let second = fs::read_to_string(env.path("prompt.2")).unwrap();
+    assert!(second.contains("EARLYTOKEN7"), "{second}");
 }
