@@ -23,7 +23,7 @@ mod wizard;
 
 use std::process::ExitCode;
 
-use clap::{parser::ValueSource, ArgMatches, CommandFactory, FromArgMatches, Parser};
+use clap::{parser::ValueSource, ArgMatches, CommandFactory, FromArgMatches};
 
 use cli::{validate_input_mode, Config, InputMode};
 use config_file::FileConfig;
