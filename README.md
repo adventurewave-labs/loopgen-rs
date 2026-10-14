@@ -41,6 +41,13 @@ Or install from [crates.io](https://crates.io/crates/loopgen):
 cargo install loopgen
 ```
 
+> **Version note:** crates.io currently serves **0.2.0**, which predates
+> `--until` and the named-loop store (`--save-as` / `--run` / `--list` /
+> `--show` / `--remove`). Until 0.3.0 is published, install from source
+> (`cargo install --path .`, or `cargo install --git
+> https://github.com/adventurewave-labs/loopgen-rs`) to get everything
+> documented in this README.
+
 ### TOML configuration
 
 Save a loop definition as a file for reuse:

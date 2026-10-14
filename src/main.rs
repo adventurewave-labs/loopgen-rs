@@ -141,7 +141,9 @@ fn main() -> ExitCode {
 /// Merge CLI overrides on top of a loaded file config, then finish.
 fn run_from_file(cli: &Config, file_cfg: &FileConfig) -> ExitCode {
     let mut run_cfg = file_config_to_cli(file_cfg);
-    // Allow --max, --verify, --until, --model, --verbose etc. to override file values
+    // Allow --max, --verify, --until, --model, --claude-bin, --verbose etc. to
+    // override file values. Sentinel comparisons against the clap defaults
+    // mirror the `--max` pattern: a flag left at its default never overrides.
     if cli.max != 8 {
         run_cfg.max = cli.max;
     }
@@ -156,6 +158,12 @@ fn run_from_file(cli: &Config, file_cfg: &FileConfig) -> ExitCode {
     }
     if cli.model.is_some() {
         run_cfg.model.clone_from(&cli.model);
+    }
+    if cli.claude_bin != "claude" {
+        run_cfg.claude_bin = cli.claude_bin.clone();
+    }
+    if cli.max_state_chars != 4000 {
+        run_cfg.max_state_chars = cli.max_state_chars;
     }
     if cli.dry_run {
         run_cfg.dry_run = true;
