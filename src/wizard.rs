@@ -55,18 +55,24 @@ pub fn run() -> io::Result<FileConfig> {
     })
 }
 
+/// Truncate a string for single-line display, counting characters (not bytes)
+/// so a multi-byte UTF-8 code point is never split.
+fn truncate_display(s: &str, max_chars: usize) -> String {
+    if s.chars().count() > max_chars {
+        let head: String = s.chars().take(max_chars).collect();
+        format!("{head}...")
+    } else {
+        s.to_string()
+    }
+}
+
 /// Ask post-creation actions and execute them.
 ///
 /// Returns `Ok(true)` if the loop should be run, `Ok(false)` if not.
 pub fn post_create(cfg: &FileConfig) -> io::Result<bool> {
     // Show summary
     println!("{}", ui::bold("Configuration summary:"));
-    let goal_display = if cfg.goal.len() > 60 {
-        let truncated = &cfg.goal[..60];
-        format!("{}...", truncated)
-    } else {
-        cfg.goal.clone()
-    };
+    let goal_display = truncate_display(&cfg.goal, 60);
     println!("  goal:          {}", ui::dim(&goal_display));
     println!("  max:           {}", cfg.max);
     println!(
@@ -154,5 +160,21 @@ mod tests {
         assert_eq!(cfg.max, 8);
         assert!(cfg.verify.is_none());
         assert_eq!(cfg.claude_bin, "claude");
+    }
+
+    #[test]
+    fn truncate_display_counts_chars_not_bytes() {
+        // Byte 60 falls inside the two-byte 'é': byte slicing would panic
+        // ("end byte index 60 is not a char boundary").
+        let goal = format!("{}é-tail", "a".repeat(59));
+        let shown = truncate_display(&goal, 60);
+        assert!(shown.ends_with("..."));
+        assert_eq!(shown.trim_end_matches('.').chars().count(), 60);
+        assert!(shown.contains('é'));
+    }
+
+    #[test]
+    fn truncate_display_keeps_short_strings_verbatim() {
+        assert_eq!(truncate_display("short goal", 60), "short goal");
     }
 }

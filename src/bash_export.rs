@@ -6,7 +6,7 @@
 use crate::config_file::FileConfig;
 
 fn sh(s: &str) -> String {
-    format!("'{}'", s.replace('\'', "'\\\\''"))
+    format!("'{}'", s.replace('\'', "'\\''"))
 }
 
 /// Render a `FileConfig` as a self-contained bash script.
@@ -116,7 +116,7 @@ pub fn render(cfg: &FileConfig) -> String {
 
     // Parse LOOP_STATUS
     s.push_str("  # Extract LOOP_STATUS (case-insensitive, last match wins)\n");
-    s.push_str("  STATUS=$(echo \"${RESULT}\" | grep -ioP 'LOOP_STATUS:\\s*(DONE|CONTINUE|BLOCKED)' | tail -1 | grep -ioP '(DONE|CONTINUE|BLOCKED)')\n");
+    s.push_str("  STATUS=$(echo \"${RESULT}\" | grep -ioE 'LOOP_STATUS:[[:space:]]*(DONE|CONTINUE|BLOCKED)' | tail -1 | grep -ioE '(DONE|CONTINUE|BLOCKED)')\n");
     s.push_str("  : \"${STATUS:=CONTINUE}\"\n\n");
 
     // `--until`: the check command decides completion (BLOCKED still wins).
@@ -287,7 +287,19 @@ mod tests {
             ..minimal_cfg()
         };
         let out = render(&cfg);
-        assert!(out.contains("'it'"));
+        // `'\''` is the only correct way to embed a single quote in a
+        // single-quoted shell string; anything else breaks the script.
+        assert!(out.contains("GOAL='it'\\''s a \"test\"'"), "{out}");
+    }
+
+    #[test]
+    fn status_extraction_uses_posix_ere_not_pcre() {
+        let out = render(&minimal_cfg());
+        assert!(
+            !out.contains("grep -ioP"),
+            "PCRE grep (-P) is not portable: {out}"
+        );
+        assert!(out.contains("grep -ioE"), "{out}");
     }
 
     #[test]

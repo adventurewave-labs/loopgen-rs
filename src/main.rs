@@ -23,11 +23,19 @@ mod wizard;
 
 use std::process::ExitCode;
 
-use clap::Parser;
+use clap::{parser::ValueSource, ArgMatches, CommandFactory, FromArgMatches};
 
 use cli::{validate_input_mode, Config, InputMode};
 use config_file::FileConfig;
 use store::LoopStore;
+
+/// True when the user explicitly passed `--<id>` on the command line (as
+/// opposed to the value coming from a clap default). Decides precedence over
+/// `--config` / `--run` file values, so a flag equal to the default still
+/// overrides the file.
+fn explicitly_set(matches: &ArgMatches, id: &str) -> bool {
+    matches.value_source(id) == Some(ValueSource::CommandLine)
+}
 
 /// Build a `cli::Config` from a `FileConfig` (for --config and --wizard paths).
 fn file_config_to_cli(fc: &FileConfig) -> Config {
@@ -70,7 +78,10 @@ fn cli_to_file_config(cfg: &Config) -> FileConfig {
 }
 
 fn main() -> ExitCode {
-    let cfg = Config::parse();
+    // Parse through ArgMatches so file-override precedence can distinguish
+    // "user passed the flag" from "flag sat at its clap default".
+    let matches = Config::command().get_matches();
+    let cfg = Config::from_arg_matches(&matches).expect("clap already validated the arguments");
 
     // Validate input mode
     let mode = match validate_input_mode(&cfg) {
@@ -113,7 +124,7 @@ fn main() -> ExitCode {
         InputMode::ConfigFile => {
             let path = cfg.config.as_deref().unwrap_or_default();
             match FileConfig::load_from_file(path) {
-                Ok(file_cfg) => run_from_file(&cfg, &file_cfg),
+                Ok(file_cfg) => run_from_file(&cfg, &file_cfg, &matches),
                 Err(e) => {
                     eprintln!("error loading config: {e}");
                     ExitCode::from(1)
@@ -125,7 +136,7 @@ fn main() -> ExitCode {
         InputMode::Named => {
             let name = cfg.run.as_deref().unwrap_or_default();
             match LoopStore::from_env().load(name) {
-                Ok(file_cfg) => run_from_file(&cfg, &file_cfg),
+                Ok(file_cfg) => run_from_file(&cfg, &file_cfg, &matches),
                 Err(e) => {
                     eprintln!("error: {e:#}");
                     ExitCode::from(1)
@@ -139,10 +150,14 @@ fn main() -> ExitCode {
 }
 
 /// Merge CLI overrides on top of a loaded file config, then finish.
-fn run_from_file(cli: &Config, file_cfg: &FileConfig) -> ExitCode {
+///
+/// A CLI flag overrides the file value only when the user actually passed it
+/// (`explicitly_set`), so a file value survives when the flag is absent, and a
+/// flag equal to the clap default still wins — matching the README's "CLI
+/// flags override file values when both are set".
+fn run_from_file(cli: &Config, file_cfg: &FileConfig, matches: &ArgMatches) -> ExitCode {
     let mut run_cfg = file_config_to_cli(file_cfg);
-    // Allow --max, --verify, --until, --model, --verbose etc. to override file values
-    if cli.max != 8 {
+    if explicitly_set(matches, "max") {
         run_cfg.max = cli.max;
     }
     if cli.verify.is_some() {
@@ -156,6 +171,12 @@ fn run_from_file(cli: &Config, file_cfg: &FileConfig) -> ExitCode {
     }
     if cli.model.is_some() {
         run_cfg.model.clone_from(&cli.model);
+    }
+    if explicitly_set(matches, "claude_bin") {
+        run_cfg.claude_bin = cli.claude_bin.clone();
+    }
+    if explicitly_set(matches, "max_state_chars") {
+        run_cfg.max_state_chars = cli.max_state_chars;
     }
     if cli.dry_run {
         run_cfg.dry_run = true;

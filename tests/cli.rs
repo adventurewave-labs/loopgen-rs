@@ -295,3 +295,84 @@ fn export_bash_from_named_loop_includes_until() {
     assert!(so.contains("UNTIL='cargo test'"));
     assert!(so.contains("exported goal"));
 }
+
+#[test]
+fn exported_script_with_apostrophe_goal_is_valid_bash() {
+    let env = Env::new();
+    let out = env.loopgen(&["fix the parser's bug", "--export-bash"]);
+    assert_eq!(out.status.code(), Some(0));
+    let script = env.path("apostrophe.sh");
+    fs::write(&script, stdout(&out)).expect("write script");
+    let check = Command::new("bash")
+        .arg("-n")
+        .arg(&script)
+        .output()
+        .expect("run bash -n");
+    assert!(
+        check.status.success(),
+        "exported script is not valid bash: {}",
+        String::from_utf8_lossy(&check.stderr)
+    );
+    let body = fs::read_to_string(&script).unwrap();
+    assert!(body.contains("GOAL='fix the parser'\\''s bug'"), "{body}");
+}
+
+#[test]
+fn cli_claude_bin_overrides_config_file_value() {
+    let env = Env::new();
+    let stub = env.stub_claude(&status_json("DONE"));
+    let cfg = env.path("plain.toml");
+    // The file points at a binary that cannot exist, so the run only
+    // succeeds if the CLI --claude-bin truly overrides the file value.
+    fs::write(
+        &cfg,
+        "goal = \"config goal\"\nmax = 4\nclaude_bin = \"/nonexistent/claude\"\n",
+    )
+    .expect("write config");
+    let out = env.loopgen(&["--config", s(&cfg), "--claude-bin", s(&stub)]);
+    assert_eq!(out.status.code(), Some(0), "stderr: {}", stderr(&out));
+    assert_eq!(env.calls(), 1);
+}
+
+#[test]
+fn cli_max_state_chars_overrides_config_file_value() {
+    let env = Env::new();
+    // A long result whose distinctive EARLYTOKEN7 marker sits near the start:
+    // under the file's 10-char state cap it would be truncated away, so its
+    // presence in prompt 2 proves the CLI value overrode the file. The CLI
+    // value deliberately equals the clap default: an explicit flag must win
+    // even when it matches the default.
+    let stub = env.stub_claude(
+        "printf '{\"result\":\"prefix EARLYTOKEN7 then a sizable amount of filler text so the tail cap cannot keep it LOOP_STATUS: CONTINUE | iter n/m | still going\"}'",
+    );
+    let cfg = env.path("tight.toml");
+    fs::write(
+        &cfg,
+        "goal = \"state cap goal\"\nmax = 2\nmax_state_chars = 10\n",
+    )
+    .expect("write config");
+    let out = env.loopgen(&[
+        "--config",
+        s(&cfg),
+        "--max-state-chars",
+        "4000",
+        "--claude-bin",
+        s(&stub),
+    ]);
+    assert_eq!(out.status.code(), Some(3), "stderr: {}", stderr(&out));
+    let second = fs::read_to_string(env.path("prompt.2")).unwrap();
+    assert!(second.contains("EARLYTOKEN7"), "{second}");
+}
+
+#[test]
+fn cli_max_equal_to_default_still_overrides_file() {
+    let env = Env::new();
+    let stub = env.stub_claude(&status_json("CONTINUE"));
+    let cfg = env.path("m.toml");
+    fs::write(&cfg, "goal = \"edge case goal\"\nmax = 12\n").expect("write config");
+    // --max 8 equals the clap default; it must still beat the file's 12.
+    let out = env.loopgen(&["--config", s(&cfg), "--max", "8", "--claude-bin", s(&stub)]);
+    assert_eq!(out.status.code(), Some(3), "stderr: {}", stderr(&out));
+    assert_eq!(env.calls(), 8);
+    assert!(stdout(&out).contains("[iter 8/8]"), "{}", stdout(&out));
+}
