@@ -339,7 +339,9 @@ fn cli_max_state_chars_overrides_config_file_value() {
     let env = Env::new();
     // A long result whose distinctive EARLYTOKEN7 marker sits near the start:
     // under the file's 10-char state cap it would be truncated away, so its
-    // presence in prompt 2 proves the CLI value overrode the file.
+    // presence in prompt 2 proves the CLI value overrode the file. The CLI
+    // value deliberately equals the clap default: an explicit flag must win
+    // even when it matches the default.
     let stub = env.stub_claude(
         "printf '{\"result\":\"prefix EARLYTOKEN7 then a sizable amount of filler text so the tail cap cannot keep it LOOP_STATUS: CONTINUE | iter n/m | still going\"}'",
     );
@@ -360,4 +362,17 @@ fn cli_max_state_chars_overrides_config_file_value() {
     assert_eq!(out.status.code(), Some(3), "stderr: {}", stderr(&out));
     let second = fs::read_to_string(env.path("prompt.2")).unwrap();
     assert!(second.contains("EARLYTOKEN7"), "{second}");
+}
+
+#[test]
+fn cli_max_equal_to_default_still_overrides_file() {
+    let env = Env::new();
+    let stub = env.stub_claude(&status_json("CONTINUE"));
+    let cfg = env.path("m.toml");
+    fs::write(&cfg, "goal = \"edge case goal\"\nmax = 12\n").expect("write config");
+    // --max 8 equals the clap default; it must still beat the file's 12.
+    let out = env.loopgen(&["--config", s(&cfg), "--max", "8", "--claude-bin", s(&stub)]);
+    assert_eq!(out.status.code(), Some(3), "stderr: {}", stderr(&out));
+    assert_eq!(env.calls(), 8);
+    assert!(stdout(&out).contains("[iter 8/8]"), "{}", stdout(&out));
 }
