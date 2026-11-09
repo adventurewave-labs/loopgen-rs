@@ -1,0 +1,15 @@
+# loopgen-rs
+
+> Agentic loop runner for Claude Code — turns a goal into an iterative claude -p loop with a LOOP_STATUS termination contract (max-iter cap, optional verify gate, BLOCKED escape).
+
+loopgen-rs is maintained by Adventure Wave Labs (The lab for agentic developer tooling).
+
+## Links
+
+- [Landing page](https://adventurewave-labs.github.io/loopgen-rs/): overview, features, FAQ
+- [Source code](https://github.com/adventurewave-labs/loopgen-rs): README, issues, releases
+## Install
+
+```
+cargo install loopgen
+```
